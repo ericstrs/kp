@@ -4,21 +4,48 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"text/tabwriter"
 
 	"gopkg.in/yaml.v3"
 )
 
 const (
-	apiURL = `https://api.kinopio.club`
-	usage  = `USAGE
+	lightGreyUnderlined = "\033[37;4m"
+	apiURL              = `https://api.kinopio.club`
+	usage               = `Work with Kinopio from the command line.
 
-	kinopio [command] [arguments]`
+USAGE
+  kp <command> <subcommand> [args]
+
+CORE COMMANDS
+  i, inbox: Interact with user inbox
+  space:    Interact with user spaces
+  help:     Print this usage message`
+
+	inboxUsage = `Work with Kinopio inbox.
+
+USAGE
+  kp inbox <command> [args]
+
+COMMANDS
+  view:          View inbox
+	a, add <name>: Add new card to inbox`
+
+	spaceUsage = `Work with Kinopio spaces.
+
+USAGE
+  kp space <command> [args]
+
+COMMANDS
+	ls, list:  Print all spaces
+	view <id>: View a space`
 )
 
 type Config struct {
@@ -33,29 +60,65 @@ type Card struct {
 	Name    string `json:"name"`
 }
 
+type Space struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 func Run() error {
 	args := os.Args
 	if len(args) == 1 {
-		return fmt.Errorf("Not enough arguments.\n%s\n", usage)
+		fmt.Println(usage)
+		return nil
 	}
 
 	conf, err := LoadConfig()
 	if err != nil {
-		return fmt.Errorf("Failed to load config: %v", err)
+		return fmt.Errorf("failed to load config: %v", err)
 	}
 
 	switch strings.ToLower(os.Args[1]) {
 	case `inbox`, `i`:
-		// Create inbox card
-		name := os.Args[2]
-		c := Card{
-			Name:    name,
-			SpaceID: conf.InboxSpaceID,
+		if len(args) < 3 {
+			fmt.Println(inboxUsage)
+			return nil
 		}
-
-		// Add card to inbox
-		if err := AddCardToInbox(c, conf.APIKey); err != nil {
-			return fmt.Errorf("Failed to add card to inbox: %v.\n", err)
+		switch strings.ToLower(os.Args[2]) {
+		case `view`: // TODO: View inbox
+		case `add`, `a`:
+			// Create inbox card
+			name := os.Args[2]
+			c := Card{
+				Name:    name,
+				SpaceID: conf.InboxSpaceID,
+			}
+			// Add card to inbox
+			if err := AddCardToInbox(c, conf.APIKey); err != nil {
+				return fmt.Errorf("failed to add card to inbox: %v", err)
+			}
+		default:
+			return fmt.Errorf(`unknown command %q for "kp inbox"\n%s`, os.Args[2], inboxUsage)
+		}
+	case `space`:
+		if len(args) < 3 {
+			fmt.Println(inboxUsage)
+			return nil
+		}
+		switch strings.ToLower(os.Args[2]) {
+		case `ls`, `list`: // List spaces owned by user
+			spaces, err := Spaces(conf.APIKey)
+			if err != nil {
+				return fmt.Errorf("failed to retrieve user spaces: %v", err)
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			headers := []string{"ID", "NAME"}
+			headersWithColor := strings.Join(headers, "\t") + "\n"
+			fmt.Fprintf(w, "%v", headersWithColor)
+			for _, space := range spaces {
+				fmt.Fprintf(w, "%s\t%s\n", space.ID, space.Name)
+			}
+			w.Flush()
+		case `view`: // TODO: View a space
 		}
 	case `dirs`:
 		dirs := conf.Dirs()
@@ -142,6 +205,7 @@ func createConfig(dirPath, filePath string) error {
 	return nil
 }
 
+// AddCardToInbox creates a new card in user's inbox space.
 func AddCardToInbox(c Card, key string) error {
 	if c.Name == "" {
 		return fmt.Errorf("card content cannot be empty")
@@ -174,6 +238,45 @@ func AddCardToInbox(c Card, key string) error {
 	}
 
 	return nil
+}
+
+// Spaces returns user spaces
+func Spaces(key string) ([]Space, error) {
+	spaceURL := fmt.Sprintf("%s/user/spaces", apiURL)
+
+	req, err := http.NewRequest("GET", spaceURL, nil)
+	if err != nil {
+		return []Space{}, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", key)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return []Space{}, fmt.Errorf("error making request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return []Space{}, fmt.Errorf("failed to read response body: %v", err)
+	}
+
+	// Unmarshal the response into a slice of Space
+	var spaces []Space
+	err = json.Unmarshal(body, &spaces)
+	if err != nil {
+		return []Space{}, fmt.Errorf("failed to unmarshall JSON: %v", err)
+	}
+
+	return spaces, nil
+}
+
+func color(c, str string) string {
+	return c + str + "\033[0m"
 }
 
 // Dirs returns the directories in which kinopio relies on.
