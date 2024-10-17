@@ -39,7 +39,7 @@ USAGE
 
 COMMANDS
   view:          View inbox
-	a, add <name>: Add new card to inbox`
+  a, add <name>: Add new card to inbox`
 
 	spaceUsage = `Work with Kinopio spaces.
 
@@ -47,8 +47,8 @@ USAGE
   kp space <command> [args]
 
 COMMANDS
-	ls, list: Print all spaces
-	view:     View a space`
+  ls, list: Print all spaces
+  view:     View a space`
 
 	spaceViewUsage = `View a space
 
@@ -56,8 +56,8 @@ USAGE
   kp space view [command] [args]
 
 COMMANDS
-	view <id>:          Print all space components
-	view <id> box <id>: Print all cards in box`
+  view <id>:          Print all space components
+  view <id> box <id>: Print all cards in box`
 	roundRobinUsage = `Perform round-robin scheduling on the cards of a box
 
 USAGE
@@ -138,18 +138,20 @@ func Run() error {
 		case `view`: // TODO: View inbox
 			//spaceURL := fmt.Sprintf("%s/space/inbox", apiURL)
 		case `add`, `a`:
-			// Create inbox card
-			name := os.Args[2]
+			if len(args) < 4 {
+				fmt.Println(inboxUsage)
+				return nil
+			}
+			name := os.Args[3]
 			c := Card{
 				Name:    name,
 				SpaceID: conf.InboxSpaceID,
 			}
-			// Add card to inbox
 			if err := AddCardToInbox(c, conf.APIKey); err != nil {
 				return fmt.Errorf("failed to add card to inbox: %v", err)
 			}
 		default:
-			return fmt.Errorf(`unknown command %q for "kp inbox"\n\n%s`, os.Args[2], inboxUsage)
+			return fmt.Errorf("unknown command %q for \"kp inbox\"\n\n%s", os.Args[2], inboxUsage)
 		}
 	case `space`:
 		if len(args) < 3 {
@@ -231,10 +233,10 @@ func Run() error {
 					fmt.Println(c.Name)
 				}
 			default:
-				return fmt.Errorf(`unknown command %q for "kp space view <ID>"\n\n%s`, os.Args[5], spaceViewUsage)
+				return fmt.Errorf("unknown command %q for \"kp space view <ID>\"\n\n%s", os.Args[5], spaceViewUsage)
 			}
 		default:
-			return fmt.Errorf(`unknown command %q for "kp space"\n\n%s`, os.Args[2], spaceViewUsage)
+			return fmt.Errorf("unknown command %q for \"kp space\"\n\n%s", os.Args[2], spaceViewUsage)
 		}
 	case `dirs`:
 		dirs := conf.Dirs()
